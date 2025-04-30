@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 
 typedef struct s_client {
     int id;
@@ -17,7 +18,7 @@ fd_set active_fds, read_fds;
 int next_id = 0;
 
 void fatal_error() {
-    write(2, "Fatal error\n", strlen("Fatal error\n"));
+    write(2, "Fatal error\n", 12);
     exit(1);
 }
 
@@ -100,28 +101,25 @@ t_client *find_client(int fd) {
 void send_all(int sender_fd, const char *msg) {
     t_client *cur = clients;
     while (cur) {
-        if (cur->fd != sender_fd) {
-            if (send(cur->fd, msg, strlen(msg), 0) < 0)
-                fatal_error();
-        }
+        if (cur->fd != sender_fd)
+            send(cur->fd, msg, strlen(msg), 0);
         cur = cur->next;
     }
 }
 
 int main(int argc, char **argv) {
-    int sockfd, connfd, port;
+    int sockfd, connfd;
     struct sockaddr_in servaddr, cliaddr;
     socklen_t len;
     char buffer[65536], tmp[65536];
     
     if (argc != 2) {
-        write(2, "Wrong number of arguments\n", 27);
+        write(2, "Wrong number of arguments\n", 26);
         exit(1);
     }
 
     FD_ZERO(&active_fds);
 
-    port = atoi(argv[1]);
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0)
         fatal_error();
@@ -129,11 +127,11 @@ int main(int argc, char **argv) {
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = htonl(2130706433); // 127.0.0.1
-    servaddr.sin_port = htons(port);
+    servaddr.sin_port = htons(atoi(argv[1]));
 
     if (bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
         fatal_error();
-    if (listen(sockfd, 10) < 0)
+    if (listen(sockfd, SOMAXCONN) < 0)
         fatal_error();
 
     FD_SET(sockfd, &active_fds);
@@ -142,16 +140,14 @@ int main(int argc, char **argv) {
     while (1) {
         read_fds = active_fds;
         if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) < 0)
-            continue;
-
+            fatal_error();
         for (int fd = 0; fd <= max_fd; ++fd) {
             if (FD_ISSET(fd, &read_fds)) {
                 if (fd == sockfd) {
                     len = sizeof(cliaddr);
                     connfd = accept(sockfd, (struct sockaddr *)&cliaddr, &len);
                     if (connfd < 0)
-                        continue;
-
+                        fatal_error();
                     t_client *new_client = add_client(connfd);
                     FD_SET(connfd, &active_fds);
                     if (connfd > max_fd)
@@ -166,6 +162,7 @@ int main(int argc, char **argv) {
                         sprintf(tmp, "server: client %d just left\n", client->id);
                         send_all(fd, tmp);
                         remove_client(fd);
+                        break;
                     } else {
                         buffer[ret] = '\0';
                         client->buf = str_join(client->buf, buffer);
