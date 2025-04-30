@@ -27,3 +27,8 @@ gcc -Wall -Wextra -Werror -o chat_server chat_server.c
 ```bash 
 ./chat_server <port>
  ```
+💬 Connecting to the Server
+You can connect using nc (netcat) or telnet:
+```bash 
+nc 127.0.0.1 8080
+ ```
